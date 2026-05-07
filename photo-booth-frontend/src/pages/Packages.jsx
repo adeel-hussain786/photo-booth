@@ -6,7 +6,6 @@ const TABS = ["Photo Booth","Digital Booth","Audio Guest Book","Add-Ons"];
 
 const PACKAGES = {
 
-  // ───────────────── PHOTO BOOTH ─────────────────
   "Photo Booth": [
     {
       name:"Silver",
@@ -25,7 +24,6 @@ const PACKAGES = {
         "All digital photos delivered within 1 week"
       ]
     },
-
     {
       name:"Gold",
       price:399,
@@ -44,7 +42,6 @@ const PACKAGES = {
         "All photos delivered within 1 week"
       ]
     },
-
     {
       name:"Premium",
       price:499,
@@ -65,7 +62,6 @@ const PACKAGES = {
     }
   ],
 
-  // ───────────────── DIGITAL BOOTH (FIXED FULLY) ─────────────────
   "Digital Booth": [
     {
       name:"Digital Smart",
@@ -87,7 +83,6 @@ const PACKAGES = {
     }
   ],
 
-  // ───────────────── AUDIO GUEST BOOK ─────────────────
   "Audio Guest Book": [
     {
       name:"Audio Experience",
@@ -104,7 +99,6 @@ const PACKAGES = {
     }
   ],
 
-  // ───────────────── ADD-ONS ─────────────────
   "Add-Ons": [
     {
       name:"Red Carpet",
@@ -136,9 +130,21 @@ export default function Packages() {
 
   return (
     <div className="app" style={{ paddingTop:"var(--nav-h)" }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .pkg-cards { grid-template-columns: 1fr !important; max-width: 420px; margin: 0 auto; }
+          .pkg-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .pkg-tabs::-webkit-scrollbar { display: none; }
+          .pkg-header { padding: 60px 20px 52px !important; }
+          .pkg-body { padding: 40px 20px 80px !important; }
+        }
+        @media (max-width: 480px) {
+          .pkg-cards { max-width: 100%; }
+        }
+      `}</style>
 
       {/* Header */}
-      <div style={{ background:"var(--surface)", borderBottom:"1px solid var(--border)", padding:"80px var(--gutter) 72px" }}>
+      <div className="pkg-header" style={{ background:"var(--surface)", borderBottom:"1px solid var(--border)", padding:"80px var(--gutter) 72px" }}>
         <div style={{ maxWidth:"var(--max-w)", margin:"0 auto" }}>
           <p className="eyebrow fade-up d1">Pricing</p>
           <h1 className="heading-xl fade-up d2">
@@ -152,18 +158,20 @@ export default function Packages() {
       </div>
 
       {/* Tabs */}
-      <div style={{
+      <div className="pkg-tabs" style={{
         position:"sticky", top:"var(--nav-h)", zIndex:200,
         background:"rgba(13,11,8,.96)", backdropFilter:"blur(16px)",
         borderBottom:"1px solid var(--border-soft)",
         padding:"0 var(--gutter)",
+        overflowX:"auto",
+        WebkitOverflowScrolling:"touch",
       }}>
-        <div style={{ maxWidth:"var(--max-w)", margin:"0 auto", display:"flex" }}>
+        <div style={{ maxWidth:"var(--max-w)", margin:"0 auto", display:"flex", minWidth:"max-content" }}>
           {TABS.map(t=>(
             <button key={t} onClick={()=>setTab(t)} style={{
               padding:"16px 22px",
               background:"none", border:"none",
-              fontSize:13,
+              fontSize:13, cursor:"pointer", whiteSpace:"nowrap",
               fontWeight: tab===t ? 500 : 400,
               color: tab===t ? "var(--gold-light)" : "var(--text-dim)",
               borderBottom: tab===t ? "2px solid var(--gold)" : "2px solid transparent",
@@ -173,9 +181,8 @@ export default function Packages() {
       </div>
 
       {/* Cards */}
-      <div style={{ maxWidth:"var(--max-w)", margin:"0 auto", padding:"64px var(--gutter) 112px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${pkgs.length},1fr)`, gap:3 }}>
-
+      <div className="pkg-body" style={{ maxWidth:"var(--max-w)", margin:"0 auto", padding:"64px var(--gutter) 112px" }}>
+        <div className="pkg-cards" style={{ display:"grid", gridTemplateColumns:`repeat(${Math.min(pkgs.length, 3)},1fr)`, gap:3 }}>
           {pkgs.map((pkg,i)=>(
             <div key={i} style={{
               background: pkg.featured ? "var(--surface2)" : "var(--surface)",
@@ -183,33 +190,33 @@ export default function Packages() {
               display:"flex", flexDirection:"column",
               boxShadow: pkg.featured ? "0 0 60px rgba(184,134,11,.1)" : "none",
             }}>
-
               <div style={{ height:220, overflow:"hidden" }}>
                 <img src={pkg.img} alt={pkg.name} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
               </div>
-
-              <div style={{ padding:"28px", display:"flex", flexDirection:"column", gap:12 }}>
-
+              <div style={{ padding:"28px", display:"flex", flexDirection:"column", gap:12, flex:1 }}>
+                {pkg.featured && (
+                  <span style={{
+                    display:"inline-block", padding:"4px 12px",
+                    background:"var(--gold)", color:"var(--ink)",
+                    fontSize:10, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase",
+                    alignSelf:"flex-start",
+                  }}>Most Popular</span>
+                )}
                 <h3 style={{ fontSize:20 }}>{pkg.name}</h3>
-
                 <p style={{ fontSize:28, fontWeight:"bold", color:"var(--gold-light)" }}>
                   {pkg.price ? `$${pkg.price}` : "Custom"}
                 </p>
-
                 {pkg.hours > 0 && (
-                  <p style={{ fontSize:12 }}>{pkg.hours} Hours</p>
+                  <p style={{ fontSize:12, color:"var(--text-dim)" }}>{pkg.hours} Hours</p>
                 )}
-
-                <ul style={{ fontSize:13, lineHeight:1.8 }}>
+                <ul style={{ fontSize:13, lineHeight:1.8, flex:1 }}>
                   {pkg.features.map((f,j)=>(
-                    <li key={j}>• {f}</li>
+                    <li key={j} style={{ marginBottom:4 }}>• {f}</li>
                   ))}
                 </ul>
-
-                <Link to="/contact" className="btn btn-gold" style={{ marginTop:10 }}>
+                <Link to="/contact" className="btn btn-gold" style={{ marginTop:10, textAlign:"center", justifyContent:"center" }}>
                   Book Now
                 </Link>
-
               </div>
             </div>
           ))}

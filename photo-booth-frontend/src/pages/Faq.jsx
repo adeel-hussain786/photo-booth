@@ -30,16 +30,16 @@ function Item({ q, a }) {
       <button onClick={()=>setOpen(!open)} style={{
         width:"100%", background:"none", border:"none",
         display:"flex", justifyContent:"space-between", alignItems:"center",
-        gap:24, padding:"22px 0", textAlign:"left",
+        gap:16, padding:"20px 0", textAlign:"left", cursor:"pointer",
       }}>
-        <span style={{ fontFamily:"var(--ff-display)", fontSize:"1.1rem", fontWeight:400, color:"var(--text-main)", lineHeight:1.4 }}>{q}</span>
+        <span style={{ fontFamily:"var(--ff-display)", fontSize:"clamp(0.95rem, 3vw, 1.1rem)", fontWeight:400, color:"var(--text-main)", lineHeight:1.4 }}>{q}</span>
         <span style={{ color:"var(--gold-light)", fontSize:22, lineHeight:1, flexShrink:0, transform: open?"rotate(45deg)":"none", transition:"transform .3s var(--ease-out)" }}>+</span>
       </button>
       <div style={{
         maxHeight: open ? 300 : 0, overflow:"hidden",
         transition:"max-height .4s var(--ease-out)",
       }}>
-        <p style={{ fontSize:14, color:"var(--text-dim)", lineHeight:1.9, paddingBottom:24, maxWidth:680 }}>{a}</p>
+        <p style={{ fontSize:14, color:"var(--text-dim)", lineHeight:1.9, paddingBottom:20, maxWidth:680 }}>{a}</p>
       </div>
     </div>
   );
@@ -47,11 +47,27 @@ function Item({ q, a }) {
 
 export default function Faq() {
   const [cat, setCat] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const shown = cat ? DATA.filter(d=>d.cat===cat) : DATA;
 
   return (
     <div className="app" style={{ paddingTop:"var(--nav-h)" }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .faq-layout { grid-template-columns: 1fr !important; }
+          .faq-sidebar { position: static !important; display: none; }
+          .faq-sidebar.open { display: block !important; }
+          .faq-mobile-filter { display: flex !important; }
+          .faq-cta { flex-direction: column !important; padding: 32px 24px !important; }
+          .faq-cta a { width: 100% !important; justify-content: center !important; }
+        }
+        @media (min-width: 769px) {
+          .faq-mobile-filter { display: none !important; }
+          .faq-sidebar { display: block !important; }
+        }
+      `}</style>
 
+      {/* Header */}
       <div style={{ background:"var(--surface)", borderBottom:"1px solid var(--border)", padding:"80px var(--gutter) 72px" }}>
         <div style={{ maxWidth:"var(--max-w)", margin:"0 auto" }}>
           <p className="eyebrow fade-up d1">FAQ</p>
@@ -63,11 +79,28 @@ export default function Faq() {
         </div>
       </div>
 
-      <div style={{ maxWidth:"var(--max-w)", margin:"0 auto", padding:"72px var(--gutter) 112px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"200px 1fr", gap:64, alignItems:"start" }}>
+      <div style={{ maxWidth:"var(--max-w)", margin:"0 auto", padding:"48px var(--gutter) 112px" }}>
 
-          {/* Sidebar */}
-          <div style={{ position:"sticky", top:"calc(var(--nav-h) + 32px)" }}>
+        {/* Mobile category filter */}
+        <div className="faq-mobile-filter" style={{ marginBottom:32, flexWrap:"wrap", gap:8 }}>
+          {[null,...DATA.map(d=>d.cat)].map((c,i)=>(
+            <button key={i} onClick={()=>setCat(c)} style={{
+              padding:"8px 16px",
+              background: cat===c ? "var(--gold-muted, rgba(184,134,11,.15))" : "var(--surface2)",
+              border: cat===c ? "1px solid var(--gold)" : "1px solid var(--border-soft)",
+              color: cat===c ? "var(--gold-light)" : "var(--text-dim)",
+              fontSize:13, cursor:"pointer", borderRadius:2,
+              transition:"all .2s",
+            }}>
+              {c ?? "All"}
+            </button>
+          ))}
+        </div>
+
+        <div className="faq-layout" style={{ display:"grid", gridTemplateColumns:"200px 1fr", gap:64, alignItems:"start" }}>
+
+          {/* Desktop Sidebar */}
+          <div className="faq-sidebar" style={{ position:"sticky", top:"calc(var(--nav-h) + 32px)" }}>
             <p style={{ fontSize:11, fontWeight:600, letterSpacing:"0.16em", textTransform:"uppercase", color:"var(--gold-light)", marginBottom:16 }}>
               Categories
             </p>
@@ -76,7 +109,7 @@ export default function Faq() {
                 display:"block", width:"100%", textAlign:"left",
                 background:"none", border:"none",
                 padding:"9px 12px",
-                fontSize:14,
+                fontSize:14, cursor:"pointer",
                 color: cat===c ? "var(--gold-light)" : "var(--text-dim)",
                 borderLeft: cat===c ? "2px solid var(--gold)" : "2px solid transparent",
                 transition:"color .2s, border-color .2s",
@@ -100,7 +133,7 @@ export default function Faq() {
         </div>
 
         {/* CTA */}
-        <div style={{
+        <div className="faq-cta" style={{
           marginTop:80,
           padding:"52px 60px",
           background:"var(--surface2)",
@@ -108,7 +141,7 @@ export default function Faq() {
           display:"flex", alignItems:"center", justifyContent:"space-between", gap:40, flexWrap:"wrap",
         }}>
           <div>
-            <p style={{ fontFamily:"var(--ff-display)", fontSize:"1.6rem", fontWeight:500, marginBottom:8 }}>
+            <p style={{ fontFamily:"var(--ff-display)", fontSize:"clamp(1.2rem, 4vw, 1.6rem)", fontWeight:500, marginBottom:8 }}>
               Still have questions?
             </p>
             <p style={{ fontSize:14, color:"var(--text-dim)" }}>Our team will get back to you within 24 hours.</p>

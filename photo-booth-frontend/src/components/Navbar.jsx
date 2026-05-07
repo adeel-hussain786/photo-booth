@@ -1,19 +1,21 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import logo from "../assets/logo.jpeg";
 
 const links = [
-  { to: "/", label: "Home" },
+  { to: "/",         label: "Home" },
   { to: "/packages", label: "Packages" },
-  { to: "/gallery", label: "Gallery" },
-  { to: "/about", label: "About" },
-  { to: "/contact", label: "Contact" },
-  { to: "/faq", label: "FAQ" },
+  { to: "/gallery",  label: "Gallery" },
+  { to: "/about",    label: "About" },
+  { to: "/contact",  label: "Contact" },
+  { to: "/faq",      label: "FAQ" },
 ];
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const [open, setOpen] = useState(false);
-  const loc = useLocation();
+  const [open, setOpen]         = useState(false);
+  const loc      = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 50);
@@ -22,76 +24,159 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => { setOpen(false); }, [loc.pathname]);
-  useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
 
-  const isHome = loc.pathname === "/";
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
+  const goTo = (path) => {
+    navigate(path);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
 
   return (
     <>
-      <nav style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 1000,
-        height: "var(--nav-h)",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 var(--gutter)",
-        background: scrolled
-          ? "rgba(13,11,8,.94)"
-          : isHome ? "transparent" : "rgba(13,11,8,.94)",
-        borderBottom: scrolled || !isHome
-          ? "1px solid var(--border)"
-          : "1px solid transparent",
-        backdropFilter: scrolled || !isHome ? "blur(18px)" : "none",
-        transition: "background .4s, border-color .4s, backdrop-filter .4s",
-      }}>
-        {/* Logo */}
-        <Link to="/" style={{ display:"flex", alignItems:"center", gap:10, textDecoration:"none" }}>
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <rect x="3" y="14" width="15.56" height="15.56" transform="rotate(-45 3 14)" stroke="var(--gold)" strokeWidth="1.5" fill="none"/>
-            <circle cx="14" cy="14" r="3.5" fill="var(--gold)"/>
-          </svg>
-          <div>
-            <div style={{ fontFamily:"var(--ff-tenor)", fontSize:16, letterSpacing:"0.2em", color:"var(--text-main)", lineHeight:1.1 }}>
-              PHOTOBOOTH
-            </div>
-            <div style={{ fontFamily:"var(--ff-sans)", fontSize:9, letterSpacing:"0.22em", color:"var(--gold-light)", textTransform:"uppercase" }}>
-              Premium Experiences
-            </div>
-          </div>
-        </Link>
+      <style>{`
+        .nav-desktop-links { display: flex; align-items: center; gap: 4px; }
+        .nav-cta-desktop   { display: flex; align-items: center; gap: 14px; }
 
-        {/* Desktop nav */}
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        /* Hamburger hidden by default on desktop */
+        #nav-hamburger { display: none !important; }
+
+        /* Book Now button always visible on desktop */
+        .nav-book-btn { display: inline-flex !important; }
+
+        @media (max-width: 900px) {
+          .nav-desktop-links { display: none !important; }
+          #nav-hamburger     { display: flex !important; }
+          .nav-book-btn      { display: none !important; }
+        }
+
+        .nav-link {
+          padding: 8px 13px 9px;
+          font-size: 13px;
+          font-weight: 400;
+          letter-spacing: 0.07em;
+          border-bottom: 1px solid transparent;
+          transition: color .25s, border-color .25s;
+          background: none;
+          border-top: none; border-left: none; border-right: none;
+          cursor: pointer;
+          font-family: var(--ff-sans, inherit);
+          text-decoration: none;
+          display: inline-block;
+        }
+        .nav-link:hover { color: var(--gold-light, #d4af37) !important; }
+
+        .mobile-nav-link {
+          font-family: var(--ff-sans, inherit);
+          font-size: 13px;
+          font-weight: 400;
+          letter-spacing: 0.1em;
+          padding: 13px 0;
+          border-bottom: 1px solid rgba(255,255,255,.06);
+          color: var(--text-main, #f0e8d8);
+          background: none;
+          border-left: none; border-right: none; border-top: none;
+          cursor: pointer;
+          width: 100%;
+          text-align: left;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          transition: color .25s;
+          text-decoration: none;
+          text-transform: uppercase;
+        }
+        .mobile-nav-link:hover { color: var(--gold-light, #d4af37); }
+      `}</style>
+
+      {/* ── Top nav bar ── */}
+      <nav style={{
+        position:"fixed", top:0, left:0, right:0, zIndex:1000,
+        height:"var(--nav-h, 64px)",
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        padding:"0 var(--gutter, 40px)",
+        background:"#000",
+        borderBottom:"1px solid rgba(184,134,11,.25)",
+      }}>
+
+        {/* Logo + Name */}
+        <button
+          onClick={() => goTo("/")}
+          style={{ display:"flex", alignItems:"center", background:"none", border:"none", cursor:"pointer", padding:0 }}
+        >
+          <img
+            src={logo}
+            alt="Memorify"
+            style={{ height:50, width:"auto", objectFit:"contain", display:"block" }}
+          />
+          <div style={{ display:"flex", flexDirection:"column", lineHeight:1.2, marginLeft:-4 }}>
+            <span style={{
+              fontFamily:"var(--ff-tenor, Georgia, serif)",
+              fontSize:16, letterSpacing:"0.18em",
+              color:"var(--gold-light, #d4af37)", textTransform:"uppercase",
+            }}>Memorify</span>
+            <span style={{
+              fontFamily:"var(--ff-sans, inherit)",
+              fontSize:9, letterSpacing:"0.2em",
+              color:"rgba(212,175,55,.55)", textTransform:"uppercase",
+            }}>memorify.ca</span>
+          </div>
+        </button>
+
+        {/* Desktop links */}
+        <div className="nav-desktop-links">
           {links.map(l => (
-            <Link key={l.to} to={l.to} style={{
-              padding: "8px 14px",
-              fontFamily: "var(--ff-sans)",
-              fontSize: 13, fontWeight: 400,
-              letterSpacing: "0.07em",
-              color: loc.pathname === l.to ? "var(--gold-light)" : "var(--text-dim)",
-              borderBottom: loc.pathname === l.to ? "1px solid var(--gold)" : "1px solid transparent",
-              transition: "color .25s, border-color .25s",
-              paddingBottom: 9,
-            }}>
+            <button
+              key={l.to}
+              onClick={() => goTo(l.to)}
+              className="nav-link"
+              style={{
+                color: loc.pathname === l.to ? "var(--gold-light, #d4af37)" : "var(--text-dim, rgba(240,232,216,.5))",
+                borderBottomColor: loc.pathname === l.to ? "var(--gold, #b8860b)" : "transparent",
+              }}
+            >
               {l.label}
-            </Link>
+            </button>
           ))}
         </div>
 
-        {/* CTA */}
-        <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-          <Link to="/contact" className="btn btn-gold" style={{ fontSize:12, padding:"10px 24px" }}>
-            Book Now
-          </Link>
-          {/* Hamburger */}
+        {/* Right side */}
+        <div className="nav-cta-desktop" style={{ display:"flex", alignItems:"center", gap:14 }}>
+
+          {/* Book Now — desktop only */}
           <button
+            onClick={() => goTo("/contact")}
+            className="nav-book-btn"
+            style={{
+              fontSize:12, padding:"10px 22px",
+              background:"var(--gold, #b8860b)", color:"#0d0b08",
+              border:"none", cursor:"pointer",
+              fontFamily:"var(--ff-sans, inherit)",
+              fontWeight:600, letterSpacing:"0.1em",
+              alignItems:"center",
+            }}
+          >
+            Book Now
+          </button>
+
+          {/* Hamburger — mobile only */}
+          <button
+            id="nav-hamburger"
             onClick={() => setOpen(!open)}
-            style={{ background:"none", border:"none", display:"none", flexDirection:"column", gap:5, padding:4 }}
-            id="hamburger"
-            aria-label="Menu"
+            style={{
+              background:"none", border:"none",
+              flexDirection:"column", gap:5,
+              padding:6, cursor:"pointer",
+            }}
+            aria-label={open ? "Close menu" : "Open menu"}
           >
             {[0,1,2].map(i => (
               <span key={i} style={{
                 display:"block", width:22, height:1.5,
-                background:"var(--text-main)",
+                background:"var(--text-main, #f0e8d8)",
                 transition:"all .3s",
                 transform: open
                   ? i===0 ? "rotate(45deg) translate(4.5px,4.5px)"
@@ -99,51 +184,90 @@ export default function Navbar() {
                   : "scaleX(0)"
                   : "none",
                 opacity: open && i===1 ? 0 : 1,
+                borderRadius:1,
               }}/>
             ))}
           </button>
         </div>
       </nav>
 
-      {/* Mobile overlay */}
+      {/* ── Mobile full-screen menu ── */}
       <div style={{
-        position:"fixed", inset:0, zIndex:999,
-        background:"var(--ink)",
+        position:"fixed",
+        top:"var(--nav-h, 64px)",
+        left:0, right:0, bottom:0,
+        zIndex:999,
+        background:"#000",
         display:"flex", flexDirection:"column",
-        justifyContent:"center", padding:"0 var(--gutter)",
+        justifyContent:"center",
+        padding:"0 32px 32px",
         opacity: open ? 1 : 0,
         pointerEvents: open ? "all" : "none",
-        transition:"opacity .35s var(--ease-out)",
+        transition:"opacity .3s ease-out",
+        overflowY:"auto",
       }}>
-        {links.map((l,i) => (
-          <Link key={l.to} to={l.to} style={{
-            fontFamily: "var(--ff-display)",
-            fontSize: "clamp(2.2rem,6vw,3.8rem)",
-            fontWeight: 400,
-            color: loc.pathname===l.to ? "var(--gold-light)" : "var(--text-main)",
-            padding: "14px 0",
-            borderBottom: "1px solid var(--border-soft)",
-            opacity: open ? 1 : 0,
-            transform: open ? "none" : "translateX(-20px)",
-            transition: `opacity .4s ${i*.07}s, transform .4s ${i*.07}s var(--ease-out)`,
-          }}>
-            <span style={{ fontSize:12, color:"var(--gold)", marginRight:16, fontFamily:"var(--ff-sans)", letterSpacing:"0.1em" }}>
-              0{i+1}
-            </span>
-            {l.label}
-          </Link>
-        ))}
-        <Link to="/contact" className="btn btn-gold" style={{ marginTop:40, alignSelf:"flex-start" }}>
-          Book Your Event
-        </Link>
-      </div>
 
-      <style>{`
-        @media(max-width:900px){
-          nav > div:nth-child(2){ display:none!important; }
-          #hamburger{ display:flex!important; }
-        }
-      `}</style>
+        {/* Nav links */}
+        <div style={{ display:"flex", flexDirection:"column", gap:0, marginBottom:28 }}>
+          {links.map((l, i) => (
+            <button
+              key={l.to}
+              onClick={() => goTo(l.to)}
+              className="mobile-nav-link"
+              style={{
+                color: loc.pathname === l.to ? "var(--gold-light, #d4af37)" : "var(--text-main, #f0e8d8)",
+                opacity: open ? 1 : 0,
+                transform: open ? "none" : "translateX(-16px)",
+                transition:`opacity .35s ${i*.06}s, transform .35s ${i*.06}s ease-out`,
+              }}
+            >
+              <span style={{ fontSize:10, color:"var(--gold, #b8860b)", letterSpacing:"0.1em", minWidth:22 }}>
+                0{i+1}
+              </span>
+              {l.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Book button */}
+        <button
+          onClick={() => goTo("/contact")}
+          style={{
+            alignSelf:"flex-start",
+            display:"inline-flex", alignItems:"center", gap:10,
+            padding:"12px 24px",
+            background:"var(--gold, #b8860b)", color:"#0d0b08",
+            border:"none", cursor:"pointer",
+            fontFamily:"var(--ff-sans, inherit)",
+            fontSize:11, fontWeight:600, letterSpacing:"0.12em", textTransform:"uppercase",
+            opacity: open ? 1 : 0,
+            transition:"opacity .4s .38s",
+          }}
+        >
+          Book Your Event <span style={{ fontSize:14 }}>→</span>
+        </button>
+
+        {/* Social icons */}
+        <div style={{ display:"flex", gap:16, marginTop:28, opacity: open ? 1 : 0, transition:"opacity .4s .46s" }}>
+          {[
+            { label:"Instagram", href:"https://www.instagram.com/YOUR_HANDLE" },
+            { label:"Facebook",  href:"https://www.facebook.com/YOUR_PAGE"    },
+            { label:"TikTok",    href:"https://www.tiktok.com/@YOUR_HANDLE"   },
+          ].map(({ label, href }) => (
+            <a key={label} href={href} target="_blank" rel="noopener noreferrer"
+              style={{
+                fontSize:11, letterSpacing:"0.1em",
+                color:"rgba(240,232,216,.35)", textDecoration:"none",
+                transition:"color .25s",
+              }}
+              onMouseEnter={e=>e.currentTarget.style.color="var(--gold-light, #d4af37)"}
+              onMouseLeave={e=>e.currentTarget.style.color="rgba(240,232,216,.35)"}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </div>
     </>
   );
 }

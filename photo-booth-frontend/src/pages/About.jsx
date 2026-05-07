@@ -1,11 +1,4 @@
-import { teamA, teamB, teamC, teamD, aboutHero } from "../assets/index.js";
-
-const TEAM = [
-  { name:"Alexandra Voss", role:"Founder & Creative Director", img:teamA, note:"8+ years in event photography" },
-  { name:"Marcus Lim",     role:"Lead 360° Specialist",        img:teamB, note:"Former cinematographer" },
-  { name:"Priya Sharma",   role:"Event Coordinator",           img:teamC, note:"Managed 200+ events" },
-  { name:"Jordan Reed",    role:"Technical Director",           img:teamD, note:"AV & lighting expert" },
-];
+import { aboutHero } from "../assets/index.js";
 
 const VALUES = [
   { title:"Artistry First",      desc:"Every setup is a curated visual composition, not just gear in a corner." },
@@ -17,6 +10,17 @@ const VALUES = [
 export default function About() {
   return (
     <div className="app" style={{ paddingTop:"var(--nav-h)" }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .about-intro-grid { grid-template-columns: 1fr !important; gap: 40px !important; }
+          .about-stats-grid { grid-template-columns: 1fr 1fr !important; }
+          .about-values-grid { grid-template-columns: 1fr 1fr !important; gap: 2px !important; }
+        }
+        @media (max-width: 480px) {
+          .about-values-grid { grid-template-columns: 1fr !important; }
+          .about-stats-grid { grid-template-columns: 1fr 1fr !important; }
+        }
+      `}</style>
 
       {/* Hero */}
       <div style={{
@@ -36,7 +40,7 @@ export default function About() {
       {/* Intro */}
       <div style={{ background:"var(--surface)", borderBottom:"1px solid var(--border-soft)" }}>
         <div className="section">
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:80, alignItems:"center" }}>
+          <div className="about-intro-grid" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:80, alignItems:"center" }}>
             <div>
               <p className="eyebrow">How It Started</p>
               <h2 className="heading-lg" style={{ marginBottom:24 }}>From one booth to <span className="em">500+ events</span></h2>
@@ -48,7 +52,7 @@ export default function About() {
                 Eight years and 500+ events later, we've grown into a full-service experiential photography company trusted by families, Fortune 500 companies, and event planners across the region.
               </p>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:3 }}>
+            <div className="about-stats-grid" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:3 }}>
               {[
                 { n:"500+", l:"Events Served" },
                 { n:"8",    l:"Years of Experience" },
@@ -60,7 +64,7 @@ export default function About() {
                   padding:"40px 28px",
                   border:"1px solid var(--border-soft)",
                 }}>
-                  <p style={{ fontFamily:"var(--ff-display)", fontSize:"2.8rem", fontWeight:700, color:"var(--gold-light)", lineHeight:1 }}>{n}</p>
+                  <p style={{ fontFamily:"var(--ff-display)", fontSize:"clamp(1.8rem, 4vw, 2.8rem)", fontWeight:700, color:"var(--gold-light)", lineHeight:1 }}>{n}</p>
                   <p style={{ fontSize:12, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--text-dim)", marginTop:8 }}>{l}</p>
                 </div>
               ))}
@@ -74,7 +78,7 @@ export default function About() {
         <div className="section">
           <p className="eyebrow">What Drives Us</p>
           <h2 className="heading-xl" style={{ marginBottom:56 }}>Our <span className="em">values</span></h2>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:2 }}>
+          <div className="about-values-grid" style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:2 }}>
             {VALUES.map((v,i)=>(
               <div key={i} style={{
                 padding:"44px 36px",
@@ -92,29 +96,6 @@ export default function About() {
         </div>
       </div>
 
-      {/* Team */}
-      <div style={{ background:"var(--surface)", borderTop:"1px solid var(--border-soft)" }}>
-        <div className="section">
-          <p className="eyebrow">The People</p>
-          <h2 className="heading-xl" style={{ marginBottom:56 }}>Meet the <span className="em">team</span></h2>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:20 }}>
-            {TEAM.map((m,i)=>(
-              <div key={i} style={{ background:"var(--surface2)", border:"1px solid var(--border-soft)", overflow:"hidden" }}>
-                <div style={{ height:220, overflow:"hidden" }}>
-                  <img src={m.img} alt={m.name} style={{ width:"100%", height:"100%", objectFit:"cover", objectPosition:"top", transition:"transform .5s var(--ease-out)" }}
-                    onMouseEnter={e=>e.target.style.transform="scale(1.06)"}
-                    onMouseLeave={e=>e.target.style.transform="scale(1)"}/>
-                </div>
-                <div style={{ padding:"22px 20px" }}>
-                  <p style={{ fontFamily:"var(--ff-display)", fontSize:"1.1rem", fontWeight:500, marginBottom:4 }}>{m.name}</p>
-                  <p style={{ fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--gold-light)", marginBottom:8 }}>{m.role}</p>
-                  <p style={{ fontSize:12.5, color:"var(--text-dim)" }}>{m.note}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
