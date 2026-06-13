@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Secrets — NEVER commit these
+.env
+.env.local
+backend/.env
+
+# Database (lives on the server's persistent disk, not in git)
+*.db
+*.db-shm
+*.db-wal
+
+# Build output
+dist/
+photo-booth-frontend/dist/
+
+# Local upload leftovers (now using Cloudinary)
+backend/uploads/
+
+# OS / editor
+.DS_Store
+*.log
