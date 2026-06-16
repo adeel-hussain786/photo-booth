@@ -76,6 +76,17 @@ function createTables() {
 
       CREATE INDEX IF NOT EXISTS idx_gallery_images_folderId
         ON gallery_images (folderId);
+
+      -- Images the admin adds to the PUBLIC website portfolio (/gallery page).
+      -- These are public Cloudinary assets, so we store the delivery URL plus
+      -- the publicId needed to delete them later.
+      CREATE TABLE IF NOT EXISTS site_gallery_images (
+        id TEXT PRIMARY KEY,
+        publicId TEXT NOT NULL,
+        url TEXT NOT NULL,
+        originalName TEXT,
+        createdAt INTEGER NOT NULL
+      );
     `;
 
     db.exec(schema, async (err) => {

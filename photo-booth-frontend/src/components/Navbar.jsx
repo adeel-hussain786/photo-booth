@@ -250,9 +250,7 @@ export default function Navbar() {
         {/* Social icons */}
         <div style={{ display:"flex", gap:16, marginTop:28, opacity: open ? 1 : 0, transition:"opacity .4s .46s" }}>
           {[
-            { label:"Instagram", href:"https://www.instagram.com/YOUR_HANDLE" },
-            { label:"Facebook",  href:"https://www.facebook.com/YOUR_PAGE"    },
-            { label:"TikTok",    href:"https://www.tiktok.com/@YOUR_HANDLE"   },
+            { label:"Instagram", href:"https://www.instagram.com/memorify.ca" },
           ].map(({ label, href }) => (
             <a key={label} href={href} target="_blank" rel="noopener noreferrer"
               style={{

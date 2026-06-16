@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import JSZip from "jszip";
 import rateLimit from "express-rate-limit";
 
-import { initDb, getDb, runDb, getDbRow, getAllDbRows, closeDb } from "./db.js";
+import { initDb, runDb, getDbRow, getAllDbRows, closeDb } from "./db.js";
 import { upload } from "./uploadHandler.js";
 import {
   validateFolderName,
@@ -16,13 +16,15 @@ import {
   validateUsername,
   validateAdminPassword,
 } from "./validation.js";
-import { startCleanupJob, cleanupExpiredFoldersManual } from "./cleanupJob.js";
+import { startCleanupJob } from "./cleanupJob.js";
 import {
   cloudinaryConfigured,
   uploadBuffer,
   signedDisplayUrl,
   signedDownloadUrl,
   deleteGallery,
+  uploadPublicBuffer,
+  deletePublicAsset,
 } from "./cloudinary.js";
 
 dotenv.config();
@@ -115,7 +117,6 @@ app.post("/api/admin/login", loginLimiter, async (req, res) => {
       return res.status(400).json({ error: "Username and password required" });
     }
 
-    const db = getDb();
     const admin = await getDbRow("SELECT * FROM admin_users WHERE username = ?", [username]);
 
     if (!admin) {
@@ -242,7 +243,6 @@ app.put("/api/admin/credentials", adminMiddleware, async (req, res) => {
 // ─── Admin Folder Management ───
 app.get("/api/admin/folders", adminMiddleware, async (req, res) => {
   try {
-    const db = getDb();
     const folders = await getAllDbRows(
       "SELECT id, folderName, description, createdAt, expiresAt FROM folders ORDER BY createdAt DESC"
     );
@@ -286,7 +286,6 @@ app.post("/api/admin/folders", adminMiddleware, async (req, res) => {
     const createdAt = Date.now();
     const expiresAt = createdAt + 7 * 24 * 60 * 60 * 1000; // 7 days
 
-    const db = getDb();
     await runDb(
       "INSERT INTO folders (id, folderName, passwordHash, description, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)",
       [folderId, folderName, passwordHash, description || "", createdAt, expiresAt]
@@ -308,9 +307,75 @@ app.post("/api/admin/folders", adminMiddleware, async (req, res) => {
   }
 });
 
+// Edit an existing gallery: name, description, access code, and/or expiry.
+// Every field is optional — only what's provided gets updated. Leaving the
+// access code blank keeps the current one.
+app.put("/api/admin/folders/:folderId", adminMiddleware, async (req, res) => {
+  try {
+    const { folderId } = req.params;
+    const { folderName, description, password, expiresAt } = req.body;
+
+    const folder = await getDbRow("SELECT * FROM folders WHERE id = ?", [folderId]);
+    if (!folder) {
+      return res.status(404).json({ error: "Folder not found" });
+    }
+
+    const updates = [];
+    const params = [];
+
+    if (folderName !== undefined) {
+      const v = validateFolderName(folderName);
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      updates.push("folderName = ?");
+      params.push(folderName.trim());
+    }
+
+    if (description !== undefined) {
+      const v = validateDescription(description);
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      updates.push("description = ?");
+      params.push(description || "");
+    }
+
+    // Only change the access code when a non-empty new one is supplied.
+    if (password) {
+      const v = validatePassword(password);
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      updates.push("passwordHash = ?");
+      params.push(await bcrypt.hash(password, 10));
+    }
+
+    if (expiresAt !== undefined) {
+      const ts = Number(expiresAt);
+      if (!Number.isFinite(ts) || ts <= 0) {
+        return res.status(400).json({ error: "Invalid expiry date" });
+      }
+      updates.push("expiresAt = ?");
+      params.push(ts);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+
+    params.push(folderId);
+    await runDb(`UPDATE folders SET ${updates.join(", ")} WHERE id = ?`, params);
+
+    res.json({ message: "Gallery updated successfully" });
+  } catch (error) {
+    console.error("Update folder error:", error);
+    res.status(500).json({ error: "Failed to update gallery" });
+  }
+});
+
 app.delete("/api/admin/folders/:folderId", adminMiddleware, async (req, res) => {
   try {
     const { folderId } = req.params;
+
+    const folder = await getDbRow("SELECT id FROM folders WHERE id = ?", [folderId]);
+    if (!folder) {
+      return res.status(404).json({ error: "Folder not found" });
+    }
 
     // Remove the Cloudinary assets first so we never orphan paid storage,
     // then drop the DB rows. gallery_images cascades, but we delete explicitly
@@ -403,7 +468,6 @@ app.post("/api/gallery/:folderId/verify", galleryLimiter, async (req, res) => {
       return res.status(400).json({ error: "Password required" });
     }
 
-    const db = getDb();
     const folder = await getDbRow("SELECT * FROM folders WHERE id = ?", [folderId]);
 
     if (!folder) {
@@ -462,11 +526,15 @@ app.post("/api/gallery/:folderId/download", galleryLimiter, async (req, res) => 
       return res.status(400).json({ error: "Password required" });
     }
 
-    const db = getDb();
     const folder = await getDbRow("SELECT * FROM folders WHERE id = ?", [folderId]);
 
     if (!folder) {
       return res.status(404).json({ error: "Folder not found" });
+    }
+
+    // Expired galleries can't be downloaded either (mirrors the verify route).
+    if (folder.expiresAt < Date.now()) {
+      return res.status(410).json({ error: "Gallery has expired" });
     }
 
     // Verify password
@@ -475,9 +543,6 @@ app.post("/api/gallery/:folderId/download", galleryLimiter, async (req, res) => 
       return res.status(401).json({ error: "Invalid password" });
     }
 
-    // Pull every asset back from Cloudinary (via its signed URL) and stream it
-    // into the ZIP. We number the entries to guarantee unique names even when
-    // two originals share a filename.
     const rows = await getAllDbRows(
       "SELECT * FROM gallery_images WHERE folderId = ? ORDER BY createdAt ASC",
       [folderId]
@@ -487,14 +552,30 @@ app.post("/api/gallery/:folderId/download", galleryLimiter, async (req, res) => 
       return res.status(404).json({ error: "Gallery has no media to download" });
     }
 
+    // The ZIP is built in memory, so guard against OOM on very large galleries.
+    // Beyond the cap, ask the customer to use the per-file download buttons.
+    const MAX_ZIP_BYTES = 500 * 1024 * 1024; // 500 MB
+    const totalBytes = rows.reduce((sum, r) => sum + (r.bytes || 0), 0);
+    if (totalBytes > MAX_ZIP_BYTES) {
+      return res.status(413).json({
+        error:
+          "This gallery is too large to download as a single ZIP. Please download photos individually.",
+      });
+    }
+
+    // Pull every asset back from Cloudinary (via its signed URL) and stream it
+    // into the ZIP. We number the entries to guarantee unique names even when
+    // two originals share a filename.
     const zip = new JSZip();
     let index = 0;
+    let failed = 0;
     for (const row of rows) {
       index += 1;
       const url = signedDisplayUrl(row.publicId, row.resourceType, row.format);
       const response = await fetch(url);
       if (!response.ok) {
         console.error(`Failed to fetch ${row.publicId} for ZIP: ${response.status}`);
+        failed += 1;
         continue;
       }
       const buffer = Buffer.from(await response.arrayBuffer());
@@ -504,6 +585,11 @@ app.post("/api/gallery/:folderId/download", galleryLimiter, async (req, res) => 
       const base = (row.originalName || `file_${index}`).replace(/\.[^.]+$/, "");
       const safeName = `${String(index).padStart(3, "0")}_${base}${ext}`;
       zip.folder(subfolder).file(safeName, buffer);
+    }
+
+    // If every asset failed to fetch, don't hand back an empty ZIP.
+    if (failed === rows.length) {
+      return res.status(502).json({ error: "Could not retrieve gallery media" });
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
@@ -519,9 +605,99 @@ app.post("/api/gallery/:folderId/download", galleryLimiter, async (req, res) => 
   }
 });
 
+// ─── Public Website Gallery (the marketing /gallery page) ───
+
+// Public: list the admin-added portfolio images (no auth — everyone sees these).
+app.get("/api/site-gallery", async (req, res) => {
+  try {
+    const rows = await getAllDbRows(
+      "SELECT id, url, originalName, createdAt FROM site_gallery_images ORDER BY createdAt DESC"
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error("Site gallery list error:", error);
+    res.status(500).json({ error: "Failed to load gallery" });
+  }
+});
+
+// Admin: add one or more public portfolio images.
+app.post("/api/admin/site-gallery", adminMiddleware, upload.array("files", 50), async (req, res) => {
+  try {
+    if (!cloudinaryConfigured()) {
+      return res.status(500).json({ error: "Cloudinary is not configured." });
+    }
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    const added = [];
+    for (const file of req.files) {
+      if (!file.mimetype.startsWith("image/")) continue; // portfolio is images only
+      const result = await uploadPublicBuffer(file.buffer, file.originalname);
+      const id = uuidv4();
+      await runDb(
+        "INSERT INTO site_gallery_images (id, publicId, url, originalName, createdAt) VALUES (?, ?, ?, ?, ?)",
+        [id, result.public_id, result.secure_url, file.originalname, Date.now()]
+      );
+      added.push({ id, url: result.secure_url, originalName: file.originalname });
+    }
+
+    if (added.length === 0) {
+      return res.status(400).json({ error: "No valid images uploaded" });
+    }
+
+    res.json({ message: "Images added", images: added });
+  } catch (error) {
+    console.error("Site gallery upload error:", error);
+    res.status(500).json({ error: "Failed to add images" });
+  }
+});
+
+// Admin: delete one public portfolio image.
+app.delete("/api/admin/site-gallery/:id", adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const row = await getDbRow("SELECT * FROM site_gallery_images WHERE id = ?", [id]);
+    if (!row) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+    await deletePublicAsset(row.publicId);
+    await runDb("DELETE FROM site_gallery_images WHERE id = ?", [id]);
+    res.json({ message: "Image deleted" });
+  } catch (error) {
+    console.error("Site gallery delete error:", error);
+    res.status(500).json({ error: "Failed to delete image" });
+  }
+});
+
 // ─── Original Email Endpoint (kept for backwards compatibility) ───
-app.post("/send", async (req, res) => {
-  const { name, email, phone, eventType, date, guests, message } = req.body;
+// Public + unauthenticated, so throttle it to deter spam/abuse.
+const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many inquiries sent. Please try again later." },
+});
+
+// Escape user-supplied values before embedding them in the HTML email body
+// to prevent HTML/markup injection into the inbox.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+app.post("/send", contactLimiter, async (req, res) => {
+  const name = escapeHtml(req.body.name);
+  const email = escapeHtml(req.body.email);
+  const phone = escapeHtml(req.body.phone);
+  const eventType = escapeHtml(req.body.eventType);
+  const date = escapeHtml(req.body.date);
+  const guests = escapeHtml(req.body.guests);
+  const message = escapeHtml(req.body.message);
 
   try {
     const transporter = nodemailer.createTransport({
@@ -568,6 +744,37 @@ app.post("/send", async (req, res) => {
 // ─── Health check ───
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+// ─── Error handler (must be last) ───
+// Turns multer/upload rejections and any uncaught route error into clean JSON
+// so the frontend always gets a parseable { error } instead of an HTML 500 page.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+
+  if (err && err.name === "MulterError") {
+    const msg =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "A file is too large (max 50MB each)."
+        : err.code === "LIMIT_FILE_COUNT"
+          ? "Too many files (max 50 per upload)."
+          : "File upload failed.";
+    return res.status(400).json({ error: msg });
+  }
+
+  // Custom file-type rejection from uploadHandler's fileFilter.
+  if (err && typeof err.message === "string" && err.message.startsWith("File type not allowed")) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Something went wrong" });
+});
+
+// Last-resort safety nets so an unexpected async throw logs instead of
+// silently crashing the process.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
 });
 
 // ─── Server startup ───

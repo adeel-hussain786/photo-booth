@@ -29,6 +29,21 @@ export default function AdminDashboard() {
     confirmPassword: "",
   });
 
+  // Website (public) gallery management
+  const [siteImages, setSiteImages] = useState([]);
+  const [siteUploading, setSiteUploading] = useState(false);
+
+  // Edit client gallery
+  const [editFolder, setEditFolder] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editErr, setEditErr] = useState("");
+  const [editForm, setEditForm] = useState({
+    folderName: "",
+    description: "",
+    password: "",
+    expiryDays: 7,
+  });
+
   const navigate = useNavigate();
   const sessionToken = localStorage.getItem("adminSessionToken");
 
@@ -40,7 +55,64 @@ export default function AdminDashboard() {
     }
     loadFolders();
     loadAccount();
+    loadSiteImages();
   }, [sessionToken, navigate]);
+
+  const loadSiteImages = async () => {
+    try {
+      const res = await fetch(apiUrl("/api/site-gallery"));
+      if (res.ok) setSiteImages(await res.json());
+    } catch {
+      // non-fatal
+    }
+  };
+
+  const handleSiteUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    e.target.value = ""; // allow re-selecting the same file later
+
+    setSiteUploading(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("files", f));
+      const res = await fetch(apiUrl("/api/admin/site-gallery"), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+        body: fd,
+      });
+      if (res.ok) {
+        setSuccess("✅ Photos added to website gallery");
+        setTimeout(() => setSuccess(""), 2000);
+        loadSiteImages();
+      } else if (!handleAuthExpired(res)) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error || "Failed to add photos");
+      }
+    } catch {
+      setError("Could not connect to server");
+    } finally {
+      setSiteUploading(false);
+    }
+  };
+
+  const handleSiteDelete = async (id) => {
+    if (!window.confirm("Remove this photo from the website gallery?")) return;
+    try {
+      const res = await fetch(apiUrl(`/api/admin/site-gallery/${id}`), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (res.ok) {
+        loadSiteImages();
+      } else if (!handleAuthExpired(res)) {
+        setError("Failed to delete photo");
+      }
+    } catch {
+      setError("Could not connect to server");
+    }
+  };
 
   const loadAccount = async () => {
     try {
@@ -104,16 +176,27 @@ export default function AdminDashboard() {
     }
   };
 
+  // When the session has expired or been invalidated, clear it and bounce the
+  // admin back to the login screen instead of leaving them on a dead dashboard.
+  const handleAuthExpired = (res) => {
+    if (res.status === 401) {
+      localStorage.removeItem("adminSessionToken");
+      navigate("/admin/login");
+      return true;
+    }
+    return false;
+  };
+
   const loadFolders = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/admin/folders", {
+      const res = await fetch(apiUrl("/api/admin/folders"), {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
 
       if (res.ok) {
         const data = await res.json();
         setFolders(data);
-      } else {
+      } else if (!handleAuthExpired(res)) {
         setError("Failed to load folders");
       }
     } catch (err) {
@@ -150,7 +233,7 @@ export default function AdminDashboard() {
 
     try {
       // Create folder first
-      const folderRes = await fetch("http://localhost:5000/api/admin/folders", {
+      const folderRes = await fetch(apiUrl("/api/admin/folders"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -164,7 +247,8 @@ export default function AdminDashboard() {
       });
 
       if (!folderRes.ok) {
-        const errData = await folderRes.json();
+        if (handleAuthExpired(folderRes)) return;
+        const errData = await folderRes.json().catch(() => ({}));
         setError(errData.error || "Failed to create folder");
         setLoading(false);
         return;
@@ -183,7 +267,7 @@ export default function AdminDashboard() {
           uploadFormData.append("files", file);
         });
 
-        const uploadRes = await fetch("http://localhost:5000/api/admin/upload", {
+        const uploadRes = await fetch(apiUrl("/api/admin/upload"), {
           method: "POST",
           headers: { Authorization: `Bearer ${sessionToken}` },
           body: uploadFormData,
@@ -218,7 +302,7 @@ export default function AdminDashboard() {
     if (!window.confirm("Are you sure you want to delete this folder?")) return;
 
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/folders/${folderId}`, {
+      const res = await fetch(apiUrl(`/api/admin/folders/${folderId}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
@@ -227,7 +311,7 @@ export default function AdminDashboard() {
         setSuccess("✅ Folder deleted");
         loadFolders();
         setTimeout(() => setSuccess(""), 2000);
-      } else {
+      } else if (!handleAuthExpired(res)) {
         setError("Failed to delete folder");
       }
     } catch (err) {
@@ -246,6 +330,62 @@ export default function AdminDashboard() {
     );
   };
 
+  const openEdit = (folder) => {
+    setEditErr("");
+    setEditForm({
+      folderName: folder.folderName,
+      description: folder.description || "",
+      password: "",
+      expiryDays: Math.max(1, folder.daysUntilExpiry || 7),
+    });
+    setEditFolder(folder);
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    setEditErr("");
+    setSavingEdit(true);
+    try {
+      const days = Math.max(1, Number(editForm.expiryDays) || 1);
+      const body = {
+        folderName: editForm.folderName,
+        description: editForm.description,
+        expiresAt: Date.now() + days * 24 * 60 * 60 * 1000,
+      };
+      if (editForm.password) body.password = editForm.password; // blank = keep current
+
+      const res = await fetch(apiUrl(`/api/admin/folders/${editFolder.id}`), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (handleAuthExpired(res)) return;
+        setEditErr(data.error || "Failed to update gallery");
+        return;
+      }
+
+      setEditFolder(null);
+      setSuccess("✅ Gallery updated");
+      setTimeout(() => setSuccess(""), 2000);
+      loadFolders();
+    } catch {
+      setEditErr("Could not connect to server");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("adminSessionToken");
     navigate("/admin/login");
@@ -253,8 +393,19 @@ export default function AdminDashboard() {
 
   return (
     <div style={styles.container}>
+      {/* Responsive overrides (inline styles can't express media queries) */}
+      <style>{`
+        @media (max-width: 860px) {
+          .admin-content { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 560px) {
+          .admin-header { flex-direction: column; align-items: flex-start !important; }
+          .admin-modal { padding: 20px !important; }
+        }
+      `}</style>
+
       {/* Header */}
-      <div style={styles.header}>
+      <div className="admin-header" style={styles.header}>
         <div style={{ flex: 1 }}>
           <h1 style={styles.title}>📁 Client Gallery Admin</h1>
           <p style={styles.subtitle}>
@@ -274,7 +425,7 @@ export default function AdminDashboard() {
       {/* Account Settings modal */}
       {showSettings && (
         <div style={styles.modalOverlay} onClick={() => setShowSettings(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={styles.panelTitle}>Account Settings</h2>
             <p style={styles.helperText}>
               Update your login. Your current password is required to confirm any change.
@@ -353,11 +504,89 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Edit gallery modal */}
+      {editFolder && (
+        <div style={styles.modalOverlay} onClick={() => setEditFolder(null)}>
+          <div className="admin-modal" style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.panelTitle}>Edit Gallery</h2>
+            <form onSubmit={handleEditSave} style={styles.form}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Gallery Name</label>
+                <input
+                  type="text"
+                  name="folderName"
+                  value={editForm.folderName}
+                  onChange={handleEditChange}
+                  style={styles.input}
+                  required
+                  disabled={savingEdit}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Description</label>
+                <textarea
+                  name="description"
+                  value={editForm.description}
+                  onChange={handleEditChange}
+                  style={styles.textarea}
+                  rows="2"
+                  disabled={savingEdit}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>New Access Code</label>
+                <input
+                  type="text"
+                  name="password"
+                  value={editForm.password}
+                  onChange={handleEditChange}
+                  placeholder="Leave blank to keep current code"
+                  style={styles.input}
+                  disabled={savingEdit}
+                />
+                <p style={styles.helperText}>Min 4 characters. Only changes if you type a new one.</p>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Expires In (days from now)</label>
+                <input
+                  type="number"
+                  name="expiryDays"
+                  min="1"
+                  value={editForm.expiryDays}
+                  onChange={handleEditChange}
+                  style={styles.input}
+                  disabled={savingEdit}
+                />
+              </div>
+
+              {editErr && <div style={styles.errorMessage}>{editErr}</div>}
+
+              <div style={styles.modalActions}>
+                <button
+                  type="button"
+                  onClick={() => setEditFolder(null)}
+                  style={styles.logoutBtn}
+                  disabled={savingEdit}
+                >
+                  Cancel
+                </button>
+                <button type="submit" style={styles.submitBtn} disabled={savingEdit}>
+                  {savingEdit ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       {error && <div style={styles.errorMessage}>{error}</div>}
       {success && <div style={styles.successMessage}>{success}</div>}
 
-      <div style={styles.content}>
+      <div className="admin-content" style={styles.content}>
         {/* Left Panel: Folders List */}
         <div style={styles.leftPanel}>
           <h2 style={styles.panelTitle}>Existing Folders</h2>
@@ -382,6 +611,12 @@ export default function AdminDashboard() {
                       style={styles.copyBtn}
                     >
                       Copy Link
+                    </button>
+                    <button
+                      onClick={() => openEdit(folder)}
+                      style={styles.editBtn}
+                    >
+                      Edit
                     </button>
                     <button
                       onClick={() => handleDeleteFolder(folder.id)}
@@ -507,6 +742,48 @@ export default function AdminDashboard() {
           </form>
         </div>
       </div>
+
+      {/* Website Gallery management (the public /gallery page) */}
+      <div style={styles.siteSection}>
+        <div style={styles.siteHeader}>
+          <div>
+            <h2 style={styles.panelTitle}>Website Gallery</h2>
+            <p style={styles.helperText}>
+              Photos shown on your public Gallery page. Add or remove them anytime.
+            </p>
+          </div>
+          <label style={styles.uploadLabel}>
+            {siteUploading ? "Uploading…" : "+ Add Photos"}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleSiteUpload}
+              style={{ display: "none" }}
+              disabled={siteUploading}
+            />
+          </label>
+        </div>
+
+        {siteImages.length === 0 ? (
+          <p style={styles.emptyState}>No photos added yet. Click "Add Photos" to upload.</p>
+        ) : (
+          <div style={styles.siteGrid}>
+            {siteImages.map((img) => (
+              <div key={img.id} style={styles.siteCard}>
+                <img src={img.url} alt={img.originalName || "Gallery"} style={styles.siteImg} />
+                <button
+                  onClick={() => handleSiteDelete(img.id)}
+                  style={styles.siteDeleteBtn}
+                  title="Delete"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -521,6 +798,8 @@ const styles = {
   },
   header: {
     display: "flex",
+    flexWrap: "wrap",
+    gap: "16px",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: "40px",
@@ -693,6 +972,18 @@ const styles = {
     transition: "all 0.3s",
     whiteSpace: "nowrap",
   },
+  editBtn: {
+    padding: "6px 12px",
+    background: "rgba(255, 255, 255, 0.05)",
+    color: "#f0e8d8",
+    border: "1px solid rgba(184, 134, 11, 0.3)",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "500",
+    transition: "all 0.3s",
+    whiteSpace: "nowrap",
+  },
   deleteBtn: {
     padding: "6px 12px",
     background: "rgba(220, 38, 38, 0.15)",
@@ -842,5 +1133,67 @@ const styles = {
     cursor: "pointer",
     transition: "background 0.3s",
     marginTop: "12px",
+  },
+  siteSection: {
+    maxWidth: "1400px",
+    margin: "32px auto 0",
+    background: "rgba(255, 255, 255, 0.02)",
+    border: "1px solid rgba(184, 134, 11, 0.1)",
+    borderRadius: "8px",
+    padding: "24px",
+  },
+  siteHeader: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "20px",
+  },
+  uploadLabel: {
+    padding: "10px 20px",
+    background: "var(--gold, #b8860b)",
+    color: "#0d0b08",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: "600",
+    letterSpacing: "0.05em",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  siteGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+    gap: "12px",
+  },
+  siteCard: {
+    position: "relative",
+    borderRadius: "6px",
+    overflow: "hidden",
+    border: "1px solid rgba(184, 134, 11, 0.15)",
+    aspectRatio: "1 / 1",
+  },
+  siteImg: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
+  },
+  siteDeleteBtn: {
+    position: "absolute",
+    top: "6px",
+    right: "6px",
+    width: "26px",
+    height: "26px",
+    padding: 0,
+    background: "rgba(220, 38, 38, 0.9)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "50%",
+    cursor: "pointer",
+    fontSize: "13px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 };

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl } from "../lib/api";
 
 const WHATSAPP_NUMBER = "16479704508";
 
@@ -14,7 +15,7 @@ export default function Contact() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/send", {
+      const res = await fetch(apiUrl("/send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

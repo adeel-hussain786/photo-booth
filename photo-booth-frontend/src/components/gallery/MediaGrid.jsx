@@ -44,7 +44,7 @@ export default function MediaGrid({ items }) {
                 // Cloudinary serves these with an attachment disposition, so the
                 // browser downloads rather than navigates. download attr helps
                 // same-origin cases.
-                download={item.originalName || true}
+                download={item.originalName || undefined}
                 rel="noopener noreferrer"
               >
                 ↓
@@ -57,7 +57,7 @@ export default function MediaGrid({ items }) {
       {/* Lightbox */}
       {active && (
         <div className="mg-lightbox" onClick={() => setActive(null)}>
-          <button className="mg-close" aria-label="Close">
+          <button className="mg-close" aria-label="Close" onClick={() => setActive(null)}>
             ✕
           </button>
           <img src={active.url} alt={active.originalName || "Gallery photo"} className="mg-full" />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiUrl } from "../lib/api";
 
 export default function PrivateAdminRoute({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
@@ -14,8 +15,8 @@ export default function PrivateAdminRoute({ children }) {
       return;
     }
 
-    // Verify session with backend
-    fetch("http://localhost:5000/api/admin/folders", {
+    // Verify session with backend (lightweight endpoint)
+    fetch(apiUrl("/api/admin/me"), {
       headers: {
         Authorization: `Bearer ${sessionToken}`,
       },

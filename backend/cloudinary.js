@@ -118,4 +118,41 @@ export async function deleteGallery(folderId) {
   }
 }
 
+// ─── Public website gallery (the marketing /gallery page) ───
+// Unlike client galleries, these images are meant to be seen by everyone, so
+// they're uploaded as normal public assets and delivered by their plain URL.
+
+/**
+ * Upload a public image for the website portfolio gallery.
+ * Returns the secure delivery URL plus the public_id (needed for deletion).
+ */
+export function uploadPublicBuffer(buffer, originalName) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: `${ROOT}/site-gallery`,
+        resource_type: "image",
+        type: "upload", // public delivery
+        use_filename: true,
+        unique_filename: true,
+        filename_override: originalName,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+/** Permanently delete a single public asset by its public_id. */
+export async function deletePublicAsset(publicId) {
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: "image", type: "upload" });
+  } catch (err) {
+    console.error(`Cloudinary delete (public) failed for ${publicId}:`, err.message);
+  }
+}
+
 export default cloudinary;

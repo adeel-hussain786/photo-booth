@@ -53,6 +53,10 @@ select,input,textarea{font-family:inherit;cursor:none;}
   transform:translate(-50%,-50%);
   will-change:left,top;
 }
+/* Hide the custom cursor on touch devices — it has no mouse to follow. */
+@media (hover: none), (pointer: coarse){
+  .cur-dot,.cur-ring{display:none !important;}
+}
 .cur-dot{width:6px;height:6px;background:var(--gold-light);border-radius:50%;}
 .cur-ring{
   width:30px;height:30px;
