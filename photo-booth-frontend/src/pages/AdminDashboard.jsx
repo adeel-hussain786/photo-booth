@@ -33,6 +33,10 @@ export default function AdminDashboard() {
   const [siteImages, setSiteImages] = useState([]);
   const [siteUploading, setSiteUploading] = useState(false);
 
+  // Store: products & orders
+  const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+
   // Edit client gallery
   const [editFolder, setEditFolder] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -56,7 +60,102 @@ export default function AdminDashboard() {
     loadFolders();
     loadAccount();
     loadSiteImages();
+    loadProducts();
+    loadOrders();
   }, [sessionToken, navigate]);
+
+  const loadProducts = async () => {
+    try {
+      const res = await fetch(apiUrl("/api/admin/products"), {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (res.ok) setProducts(await res.json());
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const loadOrders = async () => {
+    try {
+      const res = await fetch(apiUrl("/api/admin/orders"), {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (res.ok) setOrders(await res.json());
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const saveProduct = async (key, fields) => {
+    try {
+      const res = await fetch(apiUrl(`/api/admin/products/${key}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify(fields),
+      });
+      if (res.ok) {
+        setSuccess("✅ Product updated");
+        setTimeout(() => setSuccess(""), 2000);
+        loadProducts();
+      } else if (!handleAuthExpired(res)) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error || "Failed to update product");
+      }
+    } catch {
+      setError("Could not connect to server");
+    }
+  };
+
+  const uploadProductImage = async (key, file) => {
+    if (!file) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(apiUrl(`/api/admin/products/${key}/image`), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+        body: fd,
+      });
+      if (res.ok) {
+        setSuccess("✅ Product photo updated");
+        setTimeout(() => setSuccess(""), 2000);
+        loadProducts();
+      } else if (!handleAuthExpired(res)) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error || "Failed to upload photo");
+      }
+    } catch {
+      setError("Could not connect to server");
+    }
+  };
+
+  const setOrderStatus = async (id, status) => {
+    try {
+      const res = await fetch(apiUrl(`/api/admin/orders/${id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) loadOrders();
+      else handleAuthExpired(res);
+    } catch {
+      setError("Could not connect to server");
+    }
+  };
+
+  const deleteOrder = async (id) => {
+    if (!window.confirm("Delete this order permanently?")) return;
+    try {
+      const res = await fetch(apiUrl(`/api/admin/orders/${id}`), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (res.ok) loadOrders();
+      else handleAuthExpired(res);
+    } catch {
+      setError("Could not connect to server");
+    }
+  };
 
   const loadSiteImages = async () => {
     try {
@@ -784,6 +883,127 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Store: Product prices */}
+      <div style={styles.siteSection}>
+        <h2 style={styles.panelTitle}>Store Products</h2>
+        <p style={styles.helperText}>Set the price for each product. Customers see active products on the Store page.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "16px" }}>
+          {products.map((p) => (
+            <div key={p.productKey} style={styles.productRow}>
+              <label style={styles.productThumbWrap} title="Click to change photo">
+                {p.imageUrl ? (
+                  <img src={p.imageUrl} alt={p.name} style={styles.productThumb} />
+                ) : (
+                  <span style={{ fontSize: 10, color: "rgba(240,232,216,0.4)" }}>+ Photo</span>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => { uploadProductImage(p.productKey, e.target.files[0]); e.target.value = ""; }}
+                />
+              </label>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <input
+                  style={{ ...styles.input, fontWeight: 600 }}
+                  value={p.name}
+                  onChange={(e) => setProducts((prev) => prev.map((x) => x.productKey === p.productKey ? { ...x, name: e.target.value } : x))}
+                />
+              </div>
+              <div style={{ width: 110 }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  style={styles.input}
+                  value={p.price}
+                  onChange={(e) => setProducts((prev) => prev.map((x) => x.productKey === p.productKey ? { ...x, price: e.target.value } : x))}
+                  placeholder="Price"
+                />
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "rgba(240,232,216,0.7)", whiteSpace: "nowrap" }}>
+                <input
+                  type="checkbox"
+                  checked={!!p.active}
+                  onChange={(e) => setProducts((prev) => prev.map((x) => x.productKey === p.productKey ? { ...x, active: e.target.checked ? 1 : 0 } : x))}
+                />
+                Active
+              </label>
+              <button
+                onClick={() => saveProduct(p.productKey, { name: p.name, price: p.price, active: p.active })}
+                style={styles.copyBtn}
+              >
+                Save
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Store: Orders */}
+      <div style={styles.siteSection}>
+        <h2 style={styles.panelTitle}>Orders ({orders.length})</h2>
+        {orders.length === 0 ? (
+          <p style={styles.emptyState}>No orders yet.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginTop: "16px" }}>
+            {orders.map((o) => (
+              <div key={o.id} style={styles.orderCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <h3 style={{ margin: "0 0 4px", fontSize: 15, color: "#f0e8d8" }}>
+                      {o.customerName}{" "}
+                      <span style={o.status === "done" ? styles.badgeDone : styles.badgeNew}>
+                        {o.status === "done" ? "DONE" : "NEW"}
+                      </span>
+                    </h3>
+                    <p style={{ margin: 0, fontSize: 12, color: "rgba(240,232,216,0.5)" }}>
+                      {new Date(o.createdAt).toLocaleString()} · {o.phone} {o.email ? "· " + o.email : ""}
+                    </p>
+                    {(o.address || o.city) && (
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(240,232,216,0.6)" }}>
+                        📍 {[o.address, o.city, o.province, o.postalCode].filter(Boolean).join(", ")}
+                      </p>
+                    )}
+                    {o.deliveryMethod && <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(184,134,11,0.85)" }}>🚚 {o.deliveryMethod}</p>}
+                    {o.notes && <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(240,232,216,0.6)" }}>📝 {o.notes}</p>}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <button
+                      onClick={() => setOrderStatus(o.id, o.status === "done" ? "new" : "done")}
+                      style={styles.copyBtn}
+                    >
+                      {o.status === "done" ? "Mark New" : "Mark Done"}
+                    </button>
+                    <button onClick={() => deleteOrder(o.id)} style={styles.deleteBtn}>Delete</button>
+                  </div>
+                </div>
+
+                {o.items.map((it) => (
+                  <div key={it.id} style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(184,134,11,0.12)" }}>
+                    <p style={{ margin: "0 0 8px", fontSize: 13, color: "#f0e8d8" }}>
+                      <b>{it.productName}</b> × {it.quantity} {it.unitPrice > 0 ? `· $${it.unitPrice} each` : ""}
+                    </p>
+                    {it.images.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {it.images.map((img, i) => (
+                          <a key={i} href={img.url} target="_blank" rel="noopener noreferrer" style={{ position: "relative", display: "inline-block" }}>
+                            <img src={img.url} alt="" style={styles.orderThumb} />
+                            {img.slot && img.slot !== "photo" && (
+                              <span style={styles.slotBadge}>{img.slot}</span>
+                            )}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1141,6 +1361,82 @@ const styles = {
     border: "1px solid rgba(184, 134, 11, 0.1)",
     borderRadius: "8px",
     padding: "24px",
+  },
+  productRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "12px",
+    background: "rgba(184, 134, 11, 0.04)",
+    border: "1px solid rgba(184, 134, 11, 0.15)",
+    borderRadius: "6px",
+    padding: "12px 16px",
+  },
+  productThumbWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 6,
+    overflow: "hidden",
+    flexShrink: 0,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(184,134,11,0.08)",
+    border: "1px dashed rgba(184,134,11,0.35)",
+  },
+  productThumb: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
+  },
+  orderCard: {
+    background: "rgba(184, 134, 11, 0.04)",
+    border: "1px solid rgba(184, 134, 11, 0.15)",
+    borderRadius: "6px",
+    padding: "16px",
+  },
+  badgeNew: {
+    fontSize: "10px",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    padding: "2px 8px",
+    borderRadius: "10px",
+    background: "rgba(34,197,94,0.15)",
+    color: "#86efac",
+    verticalAlign: "middle",
+  },
+  badgeDone: {
+    fontSize: "10px",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    padding: "2px 8px",
+    borderRadius: "10px",
+    background: "rgba(240,232,216,0.12)",
+    color: "rgba(240,232,216,0.6)",
+    verticalAlign: "middle",
+  },
+  orderThumb: {
+    width: 60,
+    height: 60,
+    objectFit: "cover",
+    borderRadius: 4,
+    border: "1px solid rgba(184,134,11,0.2)",
+    display: "block",
+  },
+  slotBadge: {
+    position: "absolute",
+    bottom: 2,
+    left: 2,
+    fontSize: 8,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    background: "rgba(13,11,8,0.85)",
+    color: "#e8c97a",
+    padding: "1px 4px",
+    borderRadius: 3,
   },
   siteHeader: {
     display: "flex",

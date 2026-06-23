@@ -63,7 +63,10 @@ export default function CustomerGallery() {
       });
 
       if (!res.ok) {
-        setError("Couldn't prepare the ZIP download. Please try again.");
+        // The backend returns a JSON { error } for failures (expired gallery,
+        // too large to ZIP, etc.). Surface that specific message when present.
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Couldn't prepare the ZIP download. Please try again.");
         return;
       }
 
@@ -161,6 +164,7 @@ const styles = {
     borderRadius: "10px",
     padding: "40px 32px",
     textAlign: "center",
+    animation: "scaleIn .55s var(--ease-out) both",
   },
   gateTitle: { fontSize: "26px", fontWeight: 600, color: "#f0e8d8", margin: 0, letterSpacing: "0.5px" },
   gateSub: { fontSize: "14px", color: "rgba(240, 232, 216, 0.6)", margin: "12px 0 28px", lineHeight: 1.5 },

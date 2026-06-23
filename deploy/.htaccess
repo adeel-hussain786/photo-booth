@@ -1,0 +1,11 @@
+# Upload this file into Hostinger's public_html folder (next to index.html).
+# It makes React Router deep links (e.g. /store, /admin/login, /g/abc123) work
+# instead of showing a 404 — every unknown path is handed back to index.html.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>

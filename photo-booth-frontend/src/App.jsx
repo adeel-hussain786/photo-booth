@@ -4,6 +4,7 @@ import Footer   from "./components/Footer";
 import Home     from "./pages/Home";
 import Packages from "./pages/Packages";
 import Gallery  from "./pages/Gallery";
+import Store    from "./pages/Store";
 import About    from "./pages/About";
 import Contact  from "./pages/Contact";
 import Faq      from "./pages/Faq";
@@ -22,6 +23,7 @@ function MarketingSite() {
         <Route path="/"          element={<Home/>}/>
         <Route path="/packages"  element={<Packages/>}/>
         <Route path="/gallery"   element={<Gallery/>}/>
+        <Route path="/store"     element={<Store/>}/>
         <Route path="/about"     element={<About/>}/>
         <Route path="/contact"   element={<Contact/>}/>
         <Route path="/faq"       element={<Faq/>}/>

@@ -79,7 +79,7 @@ export default function AdminLogin() {
         </form>
 
         <p style={styles.footer}>
-          © 2025 Memorify. All rights reserved.
+          © {new Date().getFullYear()} Memorify. All rights reserved.
         </p>
       </div>
     </div>

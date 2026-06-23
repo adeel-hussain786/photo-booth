@@ -126,11 +126,11 @@ export async function deleteGallery(folderId) {
  * Upload a public image for the website portfolio gallery.
  * Returns the secure delivery URL plus the public_id (needed for deletion).
  */
-export function uploadPublicBuffer(buffer, originalName) {
+export function uploadPublicBuffer(buffer, originalName, subfolder = "site-gallery") {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: `${ROOT}/site-gallery`,
+        folder: `${ROOT}/${subfolder}`,
         resource_type: "image",
         type: "upload", // public delivery
         use_filename: true,
@@ -152,6 +152,40 @@ export async function deletePublicAsset(publicId) {
     await cloudinary.uploader.destroy(publicId, { resource_type: "image", type: "upload" });
   } catch (err) {
     console.error(`Cloudinary delete (public) failed for ${publicId}:`, err.message);
+  }
+}
+
+// ─── Store order images (photos a customer sends to be printed) ───
+
+/** Upload a customer order photo under memorify/orders/<orderId>. */
+export function uploadOrderBuffer(buffer, orderId, originalName) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: `${ROOT}/orders/${orderId}`,
+        resource_type: "image",
+        type: "upload",
+        use_filename: true,
+        unique_filename: true,
+        filename_override: originalName,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+/** Delete all images for an order (used when an admin deletes the order). */
+export async function deleteOrderImages(orderId) {
+  const prefix = `${ROOT}/orders/${orderId}`;
+  try {
+    await cloudinary.api.delete_resources_by_prefix(prefix, { resource_type: "image", type: "upload" });
+    await cloudinary.api.delete_folder(prefix);
+  } catch (err) {
+    console.error(`Cloudinary delete (order) failed for ${prefix}:`, err.message);
   }
 }
 

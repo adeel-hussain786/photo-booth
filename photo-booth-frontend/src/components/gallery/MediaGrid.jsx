@@ -82,6 +82,7 @@ const css = `
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
 }
+@keyframes mgIn { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
 .mg-cell {
   position: relative;
   margin: 0;
@@ -89,7 +90,15 @@ const css = `
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(184, 134, 11, 0.15);
+  animation: mgIn .5s var(--ease-out, ease) both;
 }
+.mg-cell:nth-child(1){animation-delay:.02s}
+.mg-cell:nth-child(2){animation-delay:.06s}
+.mg-cell:nth-child(3){animation-delay:.10s}
+.mg-cell:nth-child(4){animation-delay:.14s}
+.mg-cell:nth-child(5){animation-delay:.18s}
+.mg-cell:nth-child(6){animation-delay:.22s}
+.mg-cell:nth-child(n+7){animation-delay:.26s}
 .mg-media {
   display: block;
   width: 100%;

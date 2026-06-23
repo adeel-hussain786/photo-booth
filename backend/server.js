@@ -25,6 +25,8 @@ import {
   deleteGallery,
   uploadPublicBuffer,
   deletePublicAsset,
+  uploadOrderBuffer,
+  deleteOrderImages,
 } from "./cloudinary.js";
 
 dotenv.config();
@@ -667,6 +669,335 @@ app.delete("/api/admin/site-gallery/:id", adminMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Site gallery delete error:", error);
     res.status(500).json({ error: "Failed to delete image" });
+  }
+});
+
+// ─── Store: products & orders ───
+
+const orderLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many orders from this device. Please try again later." },
+});
+
+// Helper: load an order with its line items and images (used by admin views).
+async function loadOrderFull(order) {
+  const items = await getAllDbRows(
+    "SELECT * FROM order_items WHERE orderId = ?",
+    [order.id]
+  );
+  const images = await getAllDbRows(
+    "SELECT id, orderItemId, url, slot FROM order_images WHERE orderId = ?",
+    [order.id]
+  );
+  return {
+    ...order,
+    items: items.map((it) => ({
+      ...it,
+      images: images
+        .filter((img) => img.orderItemId === it.id)
+        .map((img) => ({ url: img.url, slot: img.slot })),
+    })),
+  };
+}
+
+// Email the business a summary of a new order (best-effort).
+async function sendOrderEmail(order, items) {
+  if (!process.env.EMAIL || !process.env.PASSWORD) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: process.env.EMAIL, pass: process.env.PASSWORD },
+    });
+    const lines = items
+      .map(
+        (li) =>
+          `<li><b>${escapeHtml(li.product.name)}</b> × ${li.qty} — ${li.images.length} photo(s)</li>`
+      )
+      .join("");
+    await transporter.sendMail({
+      from: `"Memorify Store" <${process.env.EMAIL}>`,
+      to: process.env.EMAIL,
+      subject: `New Store Order — ${order.customerName}`,
+      html: `
+        <h2>New Product Order</h2>
+        <p><b>Name:</b> ${escapeHtml(order.customerName)}</p>
+        <p><b>Email:</b> ${escapeHtml(order.email)}</p>
+        <p><b>Phone:</b> ${escapeHtml(order.phone)}</p>
+        <p><b>Address:</b> ${escapeHtml(order.address)}</p>
+        <p><b>Delivery:</b> ${escapeHtml(order.deliveryMethod)}</p>
+        <p><b>Notes:</b> ${escapeHtml(order.notes)}</p>
+        <hr/>
+        <ul>${lines}</ul>
+        <p><b>Total:</b> ${order.total}</p>
+        <p>View full order (with photos) in the admin dashboard.</p>
+      `,
+    });
+  } catch (err) {
+    console.error("Order email failed:", err.message);
+  }
+}
+
+// Public: list products available for ordering.
+app.get("/api/products", async (req, res) => {
+  try {
+    const rows = await getAllDbRows(
+      "SELECT productKey, name, price, description, imageUrl, photoMode, unitCount FROM products WHERE active = 1 ORDER BY sortOrder ASC, name ASC"
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error("List products error:", error);
+    res.status(500).json({ error: "Failed to load products" });
+  }
+});
+
+// Public: place an order. Multipart form:
+//   customer = JSON { name, email, phone, address, notes }
+//   items    = JSON [ { productKey, quantity }, ... ]
+//   files    = images named item_<index> (multiple per item allowed)
+app.post("/api/orders", orderLimiter, upload.any(), async (req, res) => {
+  try {
+    if (!cloudinaryConfigured()) {
+      return res.status(500).json({ error: "Store is not configured for uploads." });
+    }
+
+    let customer, items;
+    try {
+      customer = JSON.parse(req.body.customer || "{}");
+      items = JSON.parse(req.body.items || "[]");
+    } catch {
+      return res.status(400).json({ error: "Invalid order data" });
+    }
+
+    // Accept either separate first/last names or a combined name.
+    const customerName =
+      [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim() ||
+      String(customer.name || "").trim();
+
+    if (!customerName) {
+      return res.status(400).json({ error: "Your name is required" });
+    }
+    if (!customer.phone || !String(customer.phone).trim()) {
+      return res.status(400).json({ error: "A contact phone is required" });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Please add at least one product" });
+    }
+
+    // Validate items + price them server-side (never trust client prices).
+    const lineItems = [];
+    let total = 0;
+    for (let i = 0; i < items.length; i++) {
+      const product = await getDbRow(
+        "SELECT * FROM products WHERE productKey = ? AND active = 1",
+        [items[i].productKey]
+      );
+      if (!product) {
+        return res.status(400).json({ error: `Unknown product: ${items[i].productKey}` });
+      }
+      const qty = Math.max(1, parseInt(items[i].quantity, 10) || 1);
+      total += product.price * qty;
+      lineItems.push({ id: uuidv4(), index: i, product, qty, unitPrice: product.price, images: [] });
+    }
+
+    const orderId = uuidv4();
+    const createdAt = Date.now();
+    await runDb(
+      `INSERT INTO orders
+         (id, customerName, firstName, lastName, email, phone, address, city, province, postalCode, deliveryMethod, notes, total, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+      [
+        orderId,
+        customerName,
+        customer.firstName || "",
+        customer.lastName || "",
+        customer.email || "",
+        customer.phone || "",
+        customer.address || "",
+        customer.city || "",
+        customer.province || "",
+        customer.postalCode || "",
+        customer.deliveryMethod || "",
+        customer.notes || "",
+        total,
+        createdAt,
+      ]
+    );
+
+    for (const li of lineItems) {
+      await runDb(
+        `INSERT INTO order_items (id, orderId, productKey, productName, unitPrice, quantity)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [li.id, orderId, li.product.productKey, li.product.name, li.unitPrice, li.qty]
+      );
+    }
+
+    // Upload each item's photos. Fieldnames:
+    //   item_<i>        → a normal photo (slot 'photo')
+    //   item_<i>_front  → front photo (double-sided)
+    //   item_<i>_back   → back photo  (double-sided)
+    const files = req.files || [];
+    for (const li of lineItems) {
+      const itemFiles = files.filter(
+        (f) => f.fieldname.startsWith(`item_${li.index}`) && f.mimetype.startsWith("image/")
+      );
+      for (const file of itemFiles) {
+        const suffix = file.fieldname.slice(`item_${li.index}`.length); // "", "_front", "_back"
+        const slot = suffix === "_front" ? "front" : suffix === "_back" ? "back" : "photo";
+        const result = await uploadOrderBuffer(file.buffer, orderId, file.originalname);
+        await runDb(
+          "INSERT INTO order_images (id, orderId, orderItemId, publicId, url, slot) VALUES (?, ?, ?, ?, ?, ?)",
+          [uuidv4(), orderId, li.id, result.public_id, result.secure_url, slot]
+        );
+        li.images.push(result.secure_url);
+      }
+    }
+
+    // Notify the business by email (doesn't block the response).
+    sendOrderEmail(
+      {
+        customerName,
+        email: customer.email,
+        phone: customer.phone,
+        address: [customer.address, customer.city, customer.province, customer.postalCode].filter(Boolean).join(", "),
+        notes: customer.notes,
+        deliveryMethod: customer.deliveryMethod,
+        total,
+      },
+      lineItems
+    );
+
+    res.json({ message: "Order placed successfully", orderId });
+  } catch (error) {
+    console.error("Place order error:", error);
+    res.status(500).json({ error: "Failed to place order" });
+  }
+});
+
+// ─── Admin: product management ───
+app.get("/api/admin/products", adminMiddleware, async (req, res) => {
+  try {
+    const rows = await getAllDbRows("SELECT * FROM products ORDER BY sortOrder ASC, name ASC");
+    res.json(rows);
+  } catch (error) {
+    console.error("Admin list products error:", error);
+    res.status(500).json({ error: "Failed to load products" });
+  }
+});
+
+app.put("/api/admin/products/:key", adminMiddleware, async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { name, price, description, active } = req.body;
+
+    const product = await getDbRow("SELECT * FROM products WHERE productKey = ?", [key]);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    const updates = [];
+    const params = [];
+    if (name !== undefined) {
+      if (!String(name).trim()) return res.status(400).json({ error: "Name cannot be empty" });
+      updates.push("name = ?");
+      params.push(String(name).trim());
+    }
+    if (price !== undefined) {
+      const p = Number(price);
+      if (!Number.isFinite(p) || p < 0) return res.status(400).json({ error: "Invalid price" });
+      updates.push("price = ?");
+      params.push(p);
+    }
+    if (description !== undefined) {
+      updates.push("description = ?");
+      params.push(String(description || ""));
+    }
+    if (active !== undefined) {
+      updates.push("active = ?");
+      params.push(active ? 1 : 0);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: "Nothing to update" });
+
+    updates.push("updatedAt = ?");
+    params.push(Date.now());
+    params.push(key);
+    await runDb(`UPDATE products SET ${updates.join(", ")} WHERE productKey = ?`, params);
+    res.json({ message: "Product updated" });
+  } catch (error) {
+    console.error("Update product error:", error);
+    res.status(500).json({ error: "Failed to update product" });
+  }
+});
+
+// Upload/replace a product photo (shown on the store card).
+app.post("/api/admin/products/:key/image", adminMiddleware, upload.single("file"), async (req, res) => {
+  try {
+    if (!cloudinaryConfigured()) return res.status(500).json({ error: "Cloudinary not configured." });
+    const { key } = req.params;
+    const product = await getDbRow("SELECT * FROM products WHERE productKey = ?", [key]);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    if (!req.file || !req.file.mimetype.startsWith("image/")) {
+      return res.status(400).json({ error: "Please upload an image" });
+    }
+
+    const result = await uploadPublicBuffer(req.file.buffer, req.file.originalname, "products");
+    // Remove the previous image (best-effort) so old files don't pile up.
+    if (product.imagePublicId) await deletePublicAsset(product.imagePublicId);
+
+    await runDb(
+      "UPDATE products SET imageUrl = ?, imagePublicId = ?, updatedAt = ? WHERE productKey = ?",
+      [result.secure_url, result.public_id, Date.now(), key]
+    );
+    res.json({ message: "Product photo updated", imageUrl: result.secure_url });
+  } catch (error) {
+    console.error("Product image error:", error);
+    res.status(500).json({ error: "Failed to upload product photo" });
+  }
+});
+
+// ─── Admin: order management ───
+app.get("/api/admin/orders", adminMiddleware, async (req, res) => {
+  try {
+    const orders = await getAllDbRows("SELECT * FROM orders ORDER BY createdAt DESC");
+    const full = [];
+    for (const o of orders) full.push(await loadOrderFull(o));
+    res.json(full);
+  } catch (error) {
+    console.error("List orders error:", error);
+    res.status(500).json({ error: "Failed to load orders" });
+  }
+});
+
+app.put("/api/admin/orders/:id", adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!["new", "done"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+    const order = await getDbRow("SELECT id FROM orders WHERE id = ?", [id]);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    await runDb("UPDATE orders SET status = ? WHERE id = ?", [status, id]);
+    res.json({ message: "Order updated" });
+  } catch (error) {
+    console.error("Update order error:", error);
+    res.status(500).json({ error: "Failed to update order" });
+  }
+});
+
+app.delete("/api/admin/orders/:id", adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await getDbRow("SELECT id FROM orders WHERE id = ?", [id]);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    await deleteOrderImages(id);
+    await runDb("DELETE FROM order_images WHERE orderId = ?", [id]);
+    await runDb("DELETE FROM order_items WHERE orderId = ?", [id]);
+    await runDb("DELETE FROM orders WHERE id = ?", [id]);
+    res.json({ message: "Order deleted" });
+  } catch (error) {
+    console.error("Delete order error:", error);
+    res.status(500).json({ error: "Failed to delete order" });
   }
 });
 
